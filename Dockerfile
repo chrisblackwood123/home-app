@@ -6,4 +6,4 @@ COPY . .
 
 RUN ./mvnw clean package -DskipTests
 
-CMD ["java", "-jar", "target/home-app-0.0.1-SNAPSHOT.jar"]
+CMD ["java", "-jar", "target/home-0.0.1-SNAPSHOT.jar"]

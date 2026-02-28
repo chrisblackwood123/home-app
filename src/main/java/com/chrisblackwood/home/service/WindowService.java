@@ -18,6 +18,10 @@ public class WindowService {
     private final double tenToFifteenMinuteVentAndCrackMaxTemp;
     private final double crackOvernightMaxTemp;
     private final double openOvernightMaxTemp;
+    private final double strongWindThreshold;
+    private final double strongWindCoolingAdjustment;
+    private final double highHumidityThreshold;
+    private final double highHumidityWarmingAdjustment;
 
     @Autowired
     public WindowService(
@@ -26,7 +30,11 @@ public class WindowService {
             @Value("${window.ten-minute-vent-max-temp}") double tenMinuteVentMaxTemp,
             @Value("${window.ten-to-fifteen-minute-vent-and-crack-max-temp}") double tenToFifteenMinuteVentAndCrackMaxTemp,
             @Value("${window.crack-overnight-max-temp}") double crackOvernightMaxTemp,
-            @Value("${window.open-overnight-max-temp}") double openOvernightMaxTemp
+            @Value("${window.open-overnight-max-temp}") double openOvernightMaxTemp,
+            @Value("${window.strong-wind-threshold}") double strongWindThreshold,
+            @Value("${window.strong-wind-cooling-adjustment}") double strongWindCoolingAdjustment,
+            @Value("${window.high-humidity-threshold}") double highHumidityThreshold,
+            @Value("${window.high-humidity-warming-adjustment}") double highHumidityWarmingAdjustment
     ) {
         this.weatherService = weatherService;
         this.fiveMinuteVentMaxTemp = fiveMinuteVentMaxTemp;
@@ -34,6 +42,10 @@ public class WindowService {
         this.tenToFifteenMinuteVentAndCrackMaxTemp = tenToFifteenMinuteVentAndCrackMaxTemp;
         this.crackOvernightMaxTemp = crackOvernightMaxTemp;
         this.openOvernightMaxTemp = openOvernightMaxTemp;
+        this.strongWindThreshold = strongWindThreshold;
+        this.strongWindCoolingAdjustment = strongWindCoolingAdjustment;
+        this.highHumidityThreshold = highHumidityThreshold;
+        this.highHumidityWarmingAdjustment = highHumidityWarmingAdjustment;
     }
 
     public WindowDecision windowDecision() {
@@ -74,27 +86,45 @@ public class WindowService {
             return WindowDecision.KEEP_CLOSED;
         }
 
-        if (tonightLow <= fiveMinuteVentMaxTemp) {
+        double effectiveNightLow = effectiveNightLow(forecastResponse, tonightLow);
+
+        if (effectiveNightLow <= fiveMinuteVentMaxTemp) {
             return WindowDecision.OPEN_FIVE_MINUTES_THEN_CLOSE;
         }
 
-        if (tonightLow <= tenMinuteVentMaxTemp) {
+        if (effectiveNightLow <= tenMinuteVentMaxTemp) {
             return WindowDecision.OPEN_TEN_MINUTES_THEN_CLOSE;
         }
 
-        if (tonightLow <= tenToFifteenMinuteVentAndCrackMaxTemp) {
+        if (effectiveNightLow <= tenToFifteenMinuteVentAndCrackMaxTemp) {
             return WindowDecision.OPEN_TEN_TO_FIFTEEN_MINUTES_THEN_CRACK_ONE_CM;
         }
 
-        if (tonightLow <= crackOvernightMaxTemp) {
+        if (effectiveNightLow <= crackOvernightMaxTemp) {
             return WindowDecision.CRACK_ONE_TO_THREE_CM_OVERNIGHT;
         }
 
-        if (tonightLow <= openOvernightMaxTemp) {
+        if (effectiveNightLow <= openOvernightMaxTemp) {
             return WindowDecision.OPEN_OVERNIGHT;
         }
 
         return WindowDecision.OPEN_WIDE_OVERNIGHT;
+    }
+
+    private double effectiveNightLow(ForecastResponse forecastResponse, double tonightLow) {
+        double adjustedNightLow = tonightLow;
+
+        Double maxWind = getTonightMaxWind(forecastResponse);
+        if (maxWind != null && maxWind >= strongWindThreshold) {
+            adjustedNightLow -= strongWindCoolingAdjustment;
+        }
+
+        Double meanHumidity = getTonightMeanHumidity(forecastResponse);
+        if (meanHumidity != null && meanHumidity >= highHumidityThreshold) {
+            adjustedNightLow += highHumidityWarmingAdjustment;
+        }
+
+        return adjustedNightLow;
     }
 
     private Double getTonightLow(ForecastResponse forecastResponse) {
@@ -102,11 +132,30 @@ public class WindowService {
             return null;
         }
 
-        List<Double> nightlyMinimums = forecastResponse.daily().temperature_2m_min();
-        if (nightlyMinimums == null || nightlyMinimums.isEmpty()) {
+        return getFirstDailyValue(forecastResponse.daily().temperature_2m_min());
+    }
+
+    private Double getTonightMaxWind(ForecastResponse forecastResponse) {
+        if (forecastResponse == null || forecastResponse.daily() == null) {
             return null;
         }
 
-        return nightlyMinimums.getFirst();
+        return getFirstDailyValue(forecastResponse.daily().wind_speed_10m_max());
+    }
+
+    private Double getTonightMeanHumidity(ForecastResponse forecastResponse) {
+        if (forecastResponse == null || forecastResponse.daily() == null) {
+            return null;
+        }
+
+        return getFirstDailyValue(forecastResponse.daily().relative_humidity_2m_mean());
+    }
+
+    private Double getFirstDailyValue(List<Double> values) {
+        if (values == null || values.isEmpty()) {
+            return null;
+        }
+
+        return values.getFirst();
     }
 }

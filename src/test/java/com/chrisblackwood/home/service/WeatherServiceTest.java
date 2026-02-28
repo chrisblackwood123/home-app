@@ -25,6 +25,7 @@ public class WeatherServiceTest {
     private final double TEMPERATURE = 2.5;
     private final double WIND_SPEED = 18.0;
     private final double HUMIDITY = 76.0;
+    private final double RAIN_SUM = 0.4;
     private final String TIMEZONE = "Europe/Paris";
 
     private final ObjectMapper MAPPER = new ObjectMapper();
@@ -39,14 +40,14 @@ public class WeatherServiceTest {
     @Test
     void shouldGetForecast() throws Exception {
         ForecastResponse forecastResponse = new ForecastResponse(LATITUDE, LONGITUDE, new ForecastResponse.Daily
-                (List.of("2026-03-01"), List.of(TEMPERATURE), List.of(WIND_SPEED), List.of(HUMIDITY)));
+                (List.of("2026-03-01"), List.of(TEMPERATURE), List.of(WIND_SPEED), List.of(HUMIDITY), List.of(RAIN_SUM)));
 
 
         server.expect(requestTo(containsString("/forecast")))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(queryParam("latitude", String.valueOf(LATITUDE)))
                 .andExpect(queryParam("longitude", String.valueOf(LONGITUDE)))
-                .andExpect(queryParam("daily", "temperature_2m_min,wind_speed_10m_max,relative_humidity_2m_mean"))
+                .andExpect(queryParam("daily", "temperature_2m_min,wind_speed_10m_max,relative_humidity_2m_mean,rain_sum"))
                 .andExpect(queryParam("timezone", TIMEZONE))
                 .andRespond(withSuccess(MAPPER.writeValueAsString(forecastResponse), MediaType.APPLICATION_JSON));
 
@@ -57,6 +58,7 @@ public class WeatherServiceTest {
         assertEquals(TEMPERATURE, response.daily().temperature_2m_min().getFirst());
         assertEquals(WIND_SPEED, response.daily().wind_speed_10m_max().getFirst());
         assertEquals(HUMIDITY, response.daily().relative_humidity_2m_mean().getFirst());
+        assertEquals(RAIN_SUM, response.daily().rain_sum().getFirst());
 
         server.verify();
     }
@@ -64,14 +66,14 @@ public class WeatherServiceTest {
     @Test
     void shouldGetFirstNightForecast() throws Exception {
         ForecastResponse forecastResponse = new ForecastResponse(LATITUDE, LONGITUDE, new ForecastResponse.Daily
-                (List.of("2026-03-01", "2026-03-02"), List.of(TEMPERATURE, 2.6), List.of(WIND_SPEED, 12.0), List.of(HUMIDITY, 55.0)));
+                (List.of("2026-03-01", "2026-03-02"), List.of(TEMPERATURE, 2.6), List.of(WIND_SPEED, 12.0), List.of(HUMIDITY, 55.0), List.of(RAIN_SUM, 1.2)));
 
 
         server.expect(requestTo(containsString("/forecast")))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(queryParam("latitude", String.valueOf(LATITUDE)))
                 .andExpect(queryParam("longitude", String.valueOf(LONGITUDE)))
-                .andExpect(queryParam("daily", "temperature_2m_min,wind_speed_10m_max,relative_humidity_2m_mean"))
+                .andExpect(queryParam("daily", "temperature_2m_min,wind_speed_10m_max,relative_humidity_2m_mean,rain_sum"))
                 .andExpect(queryParam("timezone", TIMEZONE))
                 .andRespond(withSuccess(MAPPER.writeValueAsString(forecastResponse), MediaType.APPLICATION_JSON));
 
@@ -80,6 +82,7 @@ public class WeatherServiceTest {
         assertEquals(TEMPERATURE, response.daily().temperature_2m_min().getFirst());
         assertEquals(WIND_SPEED, response.daily().wind_speed_10m_max().getFirst());
         assertEquals(HUMIDITY, response.daily().relative_humidity_2m_mean().getFirst());
+        assertEquals(RAIN_SUM, response.daily().rain_sum().getFirst());
 
         server.verify();
     }
@@ -87,14 +90,14 @@ public class WeatherServiceTest {
     @Test
     void shouldHandleEmptyTemperatureList() throws Exception {
         ForecastResponse forecastResponse = new ForecastResponse(LATITUDE, LONGITUDE, new ForecastResponse.Daily
-                (List.of("2026-03-01", "2026-03-02"), List.of(), List.of(WIND_SPEED, 12.0), List.of(HUMIDITY, 55.0)));
+                (List.of("2026-03-01", "2026-03-02"), List.of(), List.of(WIND_SPEED, 12.0), List.of(HUMIDITY, 55.0), List.of(RAIN_SUM, 1.2)));
 
 
         server.expect(requestTo(containsString("/forecast")))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(queryParam("latitude", String.valueOf(LATITUDE)))
                 .andExpect(queryParam("longitude", String.valueOf(LONGITUDE)))
-                .andExpect(queryParam("daily", "temperature_2m_min,wind_speed_10m_max,relative_humidity_2m_mean"))
+                .andExpect(queryParam("daily", "temperature_2m_min,wind_speed_10m_max,relative_humidity_2m_mean,rain_sum"))
                 .andExpect(queryParam("timezone", TIMEZONE))
                 .andRespond(withSuccess(MAPPER.writeValueAsString(forecastResponse), MediaType.APPLICATION_JSON));
 

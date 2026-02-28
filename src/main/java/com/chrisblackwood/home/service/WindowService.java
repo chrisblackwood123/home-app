@@ -22,6 +22,8 @@ public class WindowService {
     private final double strongWindCoolingAdjustment;
     private final double highHumidityThreshold;
     private final double highHumidityWarmingAdjustment;
+    private final double lightRainThreshold;
+    private final double heavyRainThreshold;
 
     @Autowired
     public WindowService(
@@ -34,7 +36,9 @@ public class WindowService {
             @Value("${window.strong-wind-threshold}") double strongWindThreshold,
             @Value("${window.strong-wind-cooling-adjustment}") double strongWindCoolingAdjustment,
             @Value("${window.high-humidity-threshold}") double highHumidityThreshold,
-            @Value("${window.high-humidity-warming-adjustment}") double highHumidityWarmingAdjustment
+            @Value("${window.high-humidity-warming-adjustment}") double highHumidityWarmingAdjustment,
+            @Value("${window.light-rain-threshold}") double lightRainThreshold,
+            @Value("${window.heavy-rain-threshold}") double heavyRainThreshold
     ) {
         this.weatherService = weatherService;
         this.fiveMinuteVentMaxTemp = fiveMinuteVentMaxTemp;
@@ -46,6 +50,9 @@ public class WindowService {
         this.strongWindCoolingAdjustment = strongWindCoolingAdjustment;
         this.highHumidityThreshold = highHumidityThreshold;
         this.highHumidityWarmingAdjustment = highHumidityWarmingAdjustment;
+        this.lightRainThreshold = lightRainThreshold;
+        this.heavyRainThreshold = heavyRainThreshold;
+        validateThresholds();
     }
 
     public WindowDecision windowDecision() {
@@ -53,8 +60,22 @@ public class WindowService {
     }
 
     public WindowRecommendation windowRecommendation() {
-        WindowDecision decision = windowDecision();
-        return new WindowRecommendation(decision, windowMessage(decision));
+        ForecastResponse forecastResponse = weatherService.getForecast();
+        Double tonightLow = getTonightLow(forecastResponse);
+        Double maxWind = getTonightMaxWind(forecastResponse);
+        Double meanHumidity = getTonightMeanHumidity(forecastResponse);
+        Double rainSum = getTonightRainSum(forecastResponse);
+        Double effectiveNightLow = tonightLow == null ? null : effectiveNightLow(tonightLow, maxWind, meanHumidity);
+        WindowDecision decision = windowDecision(effectiveNightLow, rainSum);
+        return new WindowRecommendation(
+                decision,
+                windowMessage(decision),
+                tonightLow,
+                maxWind,
+                meanHumidity,
+                rainSum,
+                effectiveNightLow
+        );
     }
 
     public String windowMessage(WindowDecision decision) {
@@ -82,12 +103,46 @@ public class WindowService {
 
     WindowDecision windowDecision(ForecastResponse forecastResponse) {
         Double tonightLow = getTonightLow(forecastResponse);
-        if (tonightLow == null) {
+        Double maxWind = getTonightMaxWind(forecastResponse);
+        Double meanHumidity = getTonightMeanHumidity(forecastResponse);
+        Double rainSum = getTonightRainSum(forecastResponse);
+        Double effectiveNightLow = tonightLow == null ? null : effectiveNightLow(tonightLow, maxWind, meanHumidity);
+        return windowDecision(effectiveNightLow, rainSum);
+    }
+
+    private WindowDecision windowDecision(Double effectiveNightLow, Double rainSum) {
+        if (effectiveNightLow == null) {
             return WindowDecision.KEEP_CLOSED;
         }
 
-        double effectiveNightLow = effectiveNightLow(forecastResponse, tonightLow);
+        if (rainSum != null && rainSum >= heavyRainThreshold) {
+            return WindowDecision.KEEP_CLOSED;
+        }
 
+        WindowDecision baseDecision = temperatureBandDecision(effectiveNightLow);
+
+        if (rainSum != null && rainSum >= lightRainThreshold && opensOvernight(baseDecision)) {
+            return WindowDecision.OPEN_TEN_MINUTES_THEN_CLOSE;
+        }
+
+        return baseDecision;
+    }
+
+    private double effectiveNightLow(double tonightLow, Double maxWind, Double meanHumidity) {
+        double adjustedNightLow = tonightLow;
+
+        if (maxWind != null && maxWind >= strongWindThreshold) {
+            adjustedNightLow -= strongWindCoolingAdjustment;
+        }
+
+        if (meanHumidity != null && meanHumidity >= highHumidityThreshold) {
+            adjustedNightLow += highHumidityWarmingAdjustment;
+        }
+
+        return adjustedNightLow;
+    }
+
+    private WindowDecision temperatureBandDecision(double effectiveNightLow) {
         if (effectiveNightLow <= fiveMinuteVentMaxTemp) {
             return WindowDecision.OPEN_FIVE_MINUTES_THEN_CLOSE;
         }
@@ -111,20 +166,11 @@ public class WindowService {
         return WindowDecision.OPEN_WIDE_OVERNIGHT;
     }
 
-    private double effectiveNightLow(ForecastResponse forecastResponse, double tonightLow) {
-        double adjustedNightLow = tonightLow;
-
-        Double maxWind = getTonightMaxWind(forecastResponse);
-        if (maxWind != null && maxWind >= strongWindThreshold) {
-            adjustedNightLow -= strongWindCoolingAdjustment;
-        }
-
-        Double meanHumidity = getTonightMeanHumidity(forecastResponse);
-        if (meanHumidity != null && meanHumidity >= highHumidityThreshold) {
-            adjustedNightLow += highHumidityWarmingAdjustment;
-        }
-
-        return adjustedNightLow;
+    private boolean opensOvernight(WindowDecision decision) {
+        return decision == WindowDecision.OPEN_TEN_TO_FIFTEEN_MINUTES_THEN_CRACK_ONE_CM
+                || decision == WindowDecision.CRACK_ONE_TO_THREE_CM_OVERNIGHT
+                || decision == WindowDecision.OPEN_OVERNIGHT
+                || decision == WindowDecision.OPEN_WIDE_OVERNIGHT;
     }
 
     private Double getTonightLow(ForecastResponse forecastResponse) {
@@ -151,11 +197,28 @@ public class WindowService {
         return getFirstDailyValue(forecastResponse.daily().relative_humidity_2m_mean());
     }
 
+    private Double getTonightRainSum(ForecastResponse forecastResponse) {
+        if (forecastResponse == null || forecastResponse.daily() == null) {
+            return null;
+        }
+
+        return getFirstDailyValue(forecastResponse.daily().rain_sum());
+    }
+
     private Double getFirstDailyValue(List<Double> values) {
         if (values == null || values.isEmpty()) {
             return null;
         }
 
         return values.getFirst();
+    }
+
+    private void validateThresholds() {
+        if (!(fiveMinuteVentMaxTemp <= tenMinuteVentMaxTemp
+                && tenMinuteVentMaxTemp <= tenToFifteenMinuteVentAndCrackMaxTemp
+                && tenToFifteenMinuteVentAndCrackMaxTemp <= crackOvernightMaxTemp
+                && crackOvernightMaxTemp <= openOvernightMaxTemp)) {
+            throw new IllegalStateException("Window temperature thresholds must be ordered ascending");
+        }
     }
 }

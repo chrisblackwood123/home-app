@@ -2,16 +2,19 @@ package com.chrisblackwood.home.service;
 
 import com.chrisblackwood.home.dto.ForecastResponse;
 import com.chrisblackwood.home.dto.WindowDecision;
+import com.chrisblackwood.home.dto.WindowRecommendation;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class WindowServiceTest {
 
     private final WindowService windowService =
-            new WindowService(null, 3.0, 7.0, 11.0, 15.0, 18.0, 20.0, 2.0, 80.0, 1.0);
+            new WindowService(null, 3.0, 7.0, 11.0, 15.0, 18.0, 20.0, 2.0, 80.0, 1.0, 0.5, 3.0);
 
     @Test
     void shouldOpenFiveMinutesThenCloseWhenTonightIsZeroToThreeDegrees() {
@@ -66,7 +69,7 @@ class WindowServiceTest {
         ForecastResponse forecast = new ForecastResponse(
                 48.51,
                 2.17,
-                new ForecastResponse.Daily(List.of("2026-03-01"), List.of(), List.of(10.0), List.of(60.0))
+                new ForecastResponse.Daily(List.of("2026-03-01"), List.of(), List.of(10.0), List.of(60.0), List.of(0.0))
         );
 
         assertEquals(WindowDecision.KEEP_CLOSED,
@@ -76,7 +79,7 @@ class WindowServiceTest {
     @Test
     void shouldUseConfiguredThresholds() {
         WindowService customThresholdWindowService =
-                new WindowService(null, 2.0, 6.0, 10.0, 14.0, 17.0, 18.0, 3.0, 75.0, 2.0);
+                new WindowService(null, 2.0, 6.0, 10.0, 14.0, 17.0, 18.0, 3.0, 75.0, 2.0, 0.3, 2.0);
         ForecastResponse forecast = forecastWith(18.0);
 
         assertEquals(WindowDecision.OPEN_WIDE_OVERNIGHT,
@@ -87,6 +90,25 @@ class WindowServiceTest {
     void shouldBuildMessageFromDecision() {
         assertEquals("Leave the windows cracked (1-3cm) overnight",
                 windowService.windowMessage(WindowDecision.CRACK_ONE_TO_THREE_CM_OVERNIGHT));
+    }
+
+    @Test
+    void shouldBuildRecommendationPayload() {
+        ForecastResponse forecast = forecastWith(15.0, 10.0, 85.0);
+        WeatherService weatherService = mock(WeatherService.class);
+        when(weatherService.getForecast()).thenReturn(forecast);
+        WindowService recommendationWindowService =
+                new WindowService(weatherService, 3.0, 7.0, 11.0, 15.0, 18.0, 20.0, 2.0, 80.0, 1.0, 0.5, 3.0);
+
+        WindowRecommendation recommendation = recommendationWindowService.windowRecommendation();
+
+        assertEquals(WindowDecision.OPEN_OVERNIGHT, recommendation.decision());
+        assertEquals("Leave the windows open overnight", recommendation.message());
+        assertEquals(15.0, recommendation.tonightLow());
+        assertEquals(10.0, recommendation.maxWind());
+        assertEquals(85.0, recommendation.meanHumidity());
+        assertEquals(0.0, recommendation.rainSum());
+        assertEquals(16.0, recommendation.effectiveNightLow());
     }
 
     @Test
@@ -105,11 +127,31 @@ class WindowServiceTest {
                 windowService.windowDecision(forecast));
     }
 
+    @Test
+    void shouldAvoidOvernightOpeningWhenLightRainIsExpected() {
+        ForecastResponse forecast = forecastWith(15.0, 10.0, 60.0, 1.0);
+
+        assertEquals(WindowDecision.OPEN_TEN_MINUTES_THEN_CLOSE,
+                windowService.windowDecision(forecast));
+    }
+
+    @Test
+    void shouldKeepClosedWhenHeavyRainIsExpected() {
+        ForecastResponse forecast = forecastWith(15.0, 10.0, 60.0, 4.0);
+
+        assertEquals(WindowDecision.KEEP_CLOSED,
+                windowService.windowDecision(forecast));
+    }
+
     private ForecastResponse forecastWith(double tonightLow) {
-        return forecastWith(tonightLow, 10.0, 60.0);
+        return forecastWith(tonightLow, 10.0, 60.0, 0.0);
     }
 
     private ForecastResponse forecastWith(double tonightLow, double maxWind, double meanHumidity) {
+        return forecastWith(tonightLow, maxWind, meanHumidity, 0.0);
+    }
+
+    private ForecastResponse forecastWith(double tonightLow, double maxWind, double meanHumidity, double rainSum) {
         return new ForecastResponse(
                 48.51,
                 2.17,
@@ -117,7 +159,8 @@ class WindowServiceTest {
                         List.of("2026-03-01", "2026-03-02"),
                         List.of(tonightLow, 10.0),
                         List.of(maxWind, 10.0),
-                        List.of(meanHumidity, 55.0)
+                        List.of(meanHumidity, 55.0),
+                        List.of(rainSum, 0.0)
                 )
         );
     }

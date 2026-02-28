@@ -1,7 +1,7 @@
 package com.chrisblackwood.home.controller;
 
 import com.chrisblackwood.home.dto.PushoverResponse;
-import com.chrisblackwood.home.dto.WindowDecision;
+import com.chrisblackwood.home.dto.WindowRecommendation;
 import com.chrisblackwood.home.notification.NotificationService;
 import com.chrisblackwood.home.service.WindowService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,8 +25,8 @@ public class WindowController {
     }
 
     @GetMapping
-    public WindowDecision getWindowDecision() {
-        return windowService.windowDecision();
+    public WindowRecommendation getWindowDecision() {
+        return windowService.windowRecommendation();
     }
 
     @PostMapping

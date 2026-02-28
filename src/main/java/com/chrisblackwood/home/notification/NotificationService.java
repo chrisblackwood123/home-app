@@ -16,8 +16,9 @@ public class NotificationService {
     private final String user;
 
     @Autowired
-    public NotificationService(RestClient.Builder restClientBuilder, @Value("${pushover.baseurl:https://api.pushover.net/1}") String baseUrl,
+    public NotificationService(RestClient.Builder restClientBuilder,
                                @Value("${pushover.token:}") String token, @Value("${pushover.user:}") String user) {
+        String baseUrl = "https://api.pushover.net/1";
         this.restClient = restClientBuilder.baseUrl(baseUrl).build();
         this.token = token;
         this.user = user;

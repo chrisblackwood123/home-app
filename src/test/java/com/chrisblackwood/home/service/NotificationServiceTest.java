@@ -36,7 +36,7 @@ public class NotificationServiceTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        notificationService = new NotificationService(builder, BASE_URL, TOKEN, USER);
+        notificationService = new NotificationService(builder, TOKEN, USER);
     }
 
     @Test

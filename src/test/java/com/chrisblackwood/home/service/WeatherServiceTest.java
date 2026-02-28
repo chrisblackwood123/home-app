@@ -55,6 +55,47 @@ public class WeatherServiceTest {
         assertEquals(TEMPERATURE, response.daily().temperature_2m_min().getFirst());
 
         server.verify();
+    }
 
+    @Test
+    void shouldGetFirstNightForecast() throws Exception {
+        ForecastResponse forecastResponse = new ForecastResponse(LATITUDE, LONGITUDE, new ForecastResponse.Daily
+                (List.of("2026-03-01", "2026-03-02"), List.of(TEMPERATURE, 2.6)));
+
+
+        server.expect(requestTo(containsString("/forecast")))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(queryParam("latitude", String.valueOf(LATITUDE)))
+                .andExpect(queryParam("longitude", String.valueOf(LONGITUDE)))
+                .andExpect(queryParam("daily", "temperature_2m_min"))
+                .andExpect(queryParam("timezone", TIMEZONE))
+                .andRespond(withSuccess(MAPPER.writeValueAsString(forecastResponse), MediaType.APPLICATION_JSON));
+
+        ForecastResponse response = weatherService.getForecast();
+
+        assertEquals(TEMPERATURE, response.daily().temperature_2m_min().getFirst());
+
+        server.verify();
+    }
+
+    @Test
+    void shouldHandleEmptyTemperatureList() throws Exception {
+        ForecastResponse forecastResponse = new ForecastResponse(LATITUDE, LONGITUDE, new ForecastResponse.Daily
+                (List.of("2026-03-01", "2026-03-02"), List.of()));
+
+
+        server.expect(requestTo(containsString("/forecast")))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(queryParam("latitude", String.valueOf(LATITUDE)))
+                .andExpect(queryParam("longitude", String.valueOf(LONGITUDE)))
+                .andExpect(queryParam("daily", "temperature_2m_min"))
+                .andExpect(queryParam("timezone", TIMEZONE))
+                .andRespond(withSuccess(MAPPER.writeValueAsString(forecastResponse), MediaType.APPLICATION_JSON));
+
+        ForecastResponse response = weatherService.getForecast();
+
+        assertEquals(0, response.daily().temperature_2m_min().size());
+
+        server.verify();
     }
 }

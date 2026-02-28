@@ -1,8 +1,11 @@
 package com.chrisblackwood.home.controller;
 
-import com.chrisblackwood.home.service.NotificationService;
+import com.chrisblackwood.home.dto.PushoverResponse;
+import com.chrisblackwood.home.notification.NotificationService;
 import com.chrisblackwood.home.service.WindowService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,8 +23,8 @@ public class WindowController {
         this.notificationService = notificationService;
     }
 
-    @RequestMapping(method = RequestMethod.GET)
-    public String helloWorld() {
-        return notificationService.sendNotification();
+    @RequestMapping(method = RequestMethod.POST)
+    public PushoverResponse sendNotification(@RequestBody String message) {
+        return notificationService.sendNotification(message);
     }
 }

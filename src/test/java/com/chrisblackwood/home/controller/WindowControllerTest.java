@@ -1,6 +1,6 @@
 //package com.chrisblackwood.home.controller;
 //
-//import com.chrisblackwood.home.service.NotificationService;
+//import com.chrisblackwood.home.notification.NotificationService;
 //import com.chrisblackwood.home.service.WindowService;
 //import org.junit.jupiter.api.Test;
 //import org.springframework.beans.factory.annotation.Autowired;

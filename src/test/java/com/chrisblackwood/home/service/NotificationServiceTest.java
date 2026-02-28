@@ -10,7 +10,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
 
 import java.util.ArrayList;
 
@@ -89,8 +88,17 @@ public class NotificationServiceTest {
                 .andExpect(content().json(MAPPER.writeValueAsString(pushoverRequest)))
                 .andRespond(withResourceNotFound());
 
-        assertThrows(RestClientResponseException.class,
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
                 () -> notificationService.sendNotification(message));
+        assertEquals("Failed to send notification to Pushover", exception.getMessage());
+    }
+
+    @Test
+    void shouldFailFastWhenTokenMissing() {
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> new NotificationService(RestClient.builder(), "", USER));
+
+        assertEquals("pushover.token must be configured", exception.getMessage());
     }
 
 }

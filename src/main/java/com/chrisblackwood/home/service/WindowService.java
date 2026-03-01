@@ -1,8 +1,11 @@
 package com.chrisblackwood.home.service;
 
+import com.chrisblackwood.home.dto.AirQualityResponse;
 import com.chrisblackwood.home.dto.ForecastResponse;
 import com.chrisblackwood.home.dto.WindowDecision;
 import com.chrisblackwood.home.dto.WindowRecommendation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -14,10 +17,12 @@ import java.util.List;
 @Service
 public class WindowService {
 
+    private static final Logger log = LoggerFactory.getLogger(WindowService.class);
     private static final int BEDTIME_HOUR = 22;
     private static final int WAKE_HOUR = 8;
 
     private final WeatherService weatherService;
+    private final AirQualityService airQualityService;
     private final double fiveMinuteVentMaxTemp;
     private final double tenMinuteVentMaxTemp;
     private final double tenToFifteenMinuteVentAndCrackMaxTemp;
@@ -29,10 +34,12 @@ public class WindowService {
     private final double highHumidityWarmingAdjustment;
     private final double lightRainThreshold;
     private final double heavyRainThreshold;
+    private final double maxOvernightEuropeanAqi;
 
     @Autowired
     public WindowService(
             WeatherService weatherService,
+            AirQualityService airQualityService,
             @Value("${window.five-minute-vent-max-temp}") double fiveMinuteVentMaxTemp,
             @Value("${window.ten-minute-vent-max-temp}") double tenMinuteVentMaxTemp,
             @Value("${window.ten-to-fifteen-minute-vent-and-crack-max-temp}") double tenToFifteenMinuteVentAndCrackMaxTemp,
@@ -43,9 +50,11 @@ public class WindowService {
             @Value("${window.high-humidity-threshold}") double highHumidityThreshold,
             @Value("${window.high-humidity-warming-adjustment}") double highHumidityWarmingAdjustment,
             @Value("${window.light-rain-threshold}") double lightRainThreshold,
-            @Value("${window.heavy-rain-threshold}") double heavyRainThreshold
+            @Value("${window.heavy-rain-threshold}") double heavyRainThreshold,
+            @Value("${window.max-overnight-european-aqi}") double maxOvernightEuropeanAqi
     ) {
         this.weatherService = weatherService;
+        this.airQualityService = airQualityService;
         this.fiveMinuteVentMaxTemp = fiveMinuteVentMaxTemp;
         this.tenMinuteVentMaxTemp = tenMinuteVentMaxTemp;
         this.tenToFifteenMinuteVentAndCrackMaxTemp = tenToFifteenMinuteVentAndCrackMaxTemp;
@@ -57,22 +66,25 @@ public class WindowService {
         this.highHumidityWarmingAdjustment = highHumidityWarmingAdjustment;
         this.lightRainThreshold = lightRainThreshold;
         this.heavyRainThreshold = heavyRainThreshold;
+        this.maxOvernightEuropeanAqi = maxOvernightEuropeanAqi;
         validateThresholds();
     }
 
     public WindowDecision windowDecision() {
-        return windowDecision(weatherService.getForecast());
+        return windowDecision(weatherService.getForecast(), getAirQualityForecastOrNull());
     }
 
     public WindowRecommendation windowRecommendation() {
         ForecastResponse forecastResponse = weatherService.getForecast();
+        AirQualityResponse airQualityResponse = getAirQualityForecastOrNull();
         OvernightMetrics overnightMetrics = overnightMetrics(forecastResponse);
+        Double overnightEuropeanAqi = overnightMaxEuropeanAqi(airQualityResponse);
         Double tonightLow = overnightMetrics.lowTemperature();
         Double maxWind = overnightMetrics.maxWind();
         Double meanHumidity = overnightMetrics.meanHumidity();
         Double rainSum = overnightMetrics.rainSum();
         Double effectiveNightLow = tonightLow == null ? null : effectiveNightLow(tonightLow, maxWind, meanHumidity);
-        WindowDecision decision = windowDecision(effectiveNightLow, rainSum);
+        WindowDecision decision = windowDecision(effectiveNightLow, rainSum, overnightEuropeanAqi);
         return new WindowRecommendation(
                 decision,
                 windowMessage(decision),
@@ -80,7 +92,8 @@ public class WindowService {
                 maxWind,
                 meanHumidity,
                 rainSum,
-                effectiveNightLow
+                effectiveNightLow,
+                overnightEuropeanAqi
         );
     }
 
@@ -108,16 +121,21 @@ public class WindowService {
     }
 
     WindowDecision windowDecision(ForecastResponse forecastResponse) {
+        return windowDecision(forecastResponse, null);
+    }
+
+    WindowDecision windowDecision(ForecastResponse forecastResponse, AirQualityResponse airQualityResponse) {
         OvernightMetrics overnightMetrics = overnightMetrics(forecastResponse);
+        Double overnightEuropeanAqi = overnightMaxEuropeanAqi(airQualityResponse);
         Double tonightLow = overnightMetrics.lowTemperature();
         Double maxWind = overnightMetrics.maxWind();
         Double meanHumidity = overnightMetrics.meanHumidity();
         Double rainSum = overnightMetrics.rainSum();
         Double effectiveNightLow = tonightLow == null ? null : effectiveNightLow(tonightLow, maxWind, meanHumidity);
-        return windowDecision(effectiveNightLow, rainSum);
+        return windowDecision(effectiveNightLow, rainSum, overnightEuropeanAqi);
     }
 
-    private WindowDecision windowDecision(Double effectiveNightLow, Double rainSum) {
+    private WindowDecision windowDecision(Double effectiveNightLow, Double rainSum, Double overnightEuropeanAqi) {
         if (effectiveNightLow == null) {
             return WindowDecision.KEEP_CLOSED;
         }
@@ -129,6 +147,12 @@ public class WindowService {
         WindowDecision baseDecision = temperatureBandDecision(effectiveNightLow);
 
         if (rainSum != null && rainSum >= lightRainThreshold && opensOvernight(baseDecision)) {
+            return WindowDecision.OPEN_TEN_MINUTES_THEN_CLOSE;
+        }
+
+        if (overnightEuropeanAqi != null
+                && overnightEuropeanAqi >= maxOvernightEuropeanAqi
+                && opensOvernight(baseDecision)) {
             return WindowDecision.OPEN_TEN_MINUTES_THEN_CLOSE;
         }
 
@@ -234,6 +258,48 @@ public class WindowService {
                 humidityCount == 0 ? null : humiditySum / humidityCount,
                 rainCount == 0 ? null : rainSum
         );
+    }
+
+    private Double overnightMaxEuropeanAqi(AirQualityResponse airQualityResponse) {
+        if (airQualityResponse == null || airQualityResponse.hourly() == null || airQualityResponse.hourly().time() == null) {
+            return null;
+        }
+
+        AirQualityResponse.Hourly hourly = airQualityResponse.hourly();
+        LocalDateTime windowStart = findFirstBedtime(hourly.time());
+        if (windowStart == null) {
+            return null;
+        }
+
+        LocalDateTime windowEnd = windowStart.toLocalDate().plusDays(1).atTime(WAKE_HOUR, 0);
+        Double maxEuropeanAqi = null;
+
+        for (int index = 0; index < hourly.time().size(); index++) {
+            LocalDateTime timestamp = parseTimestamp(hourly.time().get(index));
+            if (timestamp == null || timestamp.isBefore(windowStart) || timestamp.isAfter(windowEnd)) {
+                continue;
+            }
+
+            Double europeanAqi = valueAt(hourly.european_aqi(), index);
+            if (europeanAqi != null && (maxEuropeanAqi == null || europeanAqi > maxEuropeanAqi)) {
+                maxEuropeanAqi = europeanAqi;
+            }
+        }
+
+        return maxEuropeanAqi;
+    }
+
+    private AirQualityResponse getAirQualityForecastOrNull() {
+        if (airQualityService == null) {
+            return null;
+        }
+
+        try {
+            return airQualityService.getForecast();
+        } catch (RuntimeException exception) {
+            log.warn("Air quality unavailable, falling back to weather-only decision", exception);
+            return null;
+        }
     }
 
     private LocalDateTime findFirstBedtime(List<String> timestamps) {

@@ -7,6 +7,7 @@ public record WindowRecommendation(
         Double maxWind,
         Double meanHumidity,
         Double rainSum,
-        Double effectiveNightLow
+        Double effectiveNightLow,
+        Double maxEuropeanAqi
 ) {
 }

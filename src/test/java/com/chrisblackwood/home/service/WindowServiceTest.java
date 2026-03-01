@@ -69,7 +69,13 @@ class WindowServiceTest {
         ForecastResponse forecast = new ForecastResponse(
                 48.51,
                 2.17,
-                new ForecastResponse.Daily(List.of("2026-03-01"), List.of(), List.of(10.0), List.of(60.0), List.of(0.0))
+                new ForecastResponse.Hourly(
+                        List.of("2026-03-01T22:00", "2026-03-02T02:00", "2026-03-02T08:00"),
+                        List.of(),
+                        List.of(10.0, 9.0, 8.0),
+                        List.of(60.0, 60.0, 60.0),
+                        List.of(0.0, 0.0, 0.0)
+                )
         );
 
         assertEquals(WindowDecision.KEEP_CLOSED,
@@ -143,6 +149,24 @@ class WindowServiceTest {
                 windowService.windowDecision(forecast));
     }
 
+    @Test
+    void shouldIgnoreConditionsOutsideTheSleepWindow() {
+        ForecastResponse forecast = new ForecastResponse(
+                48.51,
+                2.17,
+                new ForecastResponse.Hourly(
+                        List.of("2026-03-01T20:00", "2026-03-01T22:00", "2026-03-02T02:00", "2026-03-02T08:00", "2026-03-02T09:00"),
+                        List.of(1.0, 19.0, 20.0, 19.5, 1.0),
+                        List.of(5.0, 8.0, 9.0, 7.0, 5.0),
+                        List.of(50.0, 60.0, 60.0, 60.0, 50.0),
+                        List.of(0.0, 0.0, 0.0, 0.0, 0.0)
+                )
+        );
+
+        assertEquals(WindowDecision.OPEN_WIDE_OVERNIGHT,
+                windowService.windowDecision(forecast));
+    }
+
     private ForecastResponse forecastWith(double tonightLow) {
         return forecastWith(tonightLow, 10.0, 60.0, 0.0);
     }
@@ -152,15 +176,25 @@ class WindowServiceTest {
     }
 
     private ForecastResponse forecastWith(double tonightLow, double maxWind, double meanHumidity, double rainSum) {
+        double rainPerHour = rainSum / 5.0;
+
         return new ForecastResponse(
                 48.51,
                 2.17,
-                new ForecastResponse.Daily(
-                        List.of("2026-03-01", "2026-03-02"),
-                        List.of(tonightLow, 10.0),
-                        List.of(maxWind, 10.0),
-                        List.of(meanHumidity, 55.0),
-                        List.of(rainSum, 0.0)
+                new ForecastResponse.Hourly(
+                        List.of(
+                                "2026-03-01T21:00",
+                                "2026-03-01T22:00",
+                                "2026-03-01T23:00",
+                                "2026-03-02T02:00",
+                                "2026-03-02T05:00",
+                                "2026-03-02T08:00",
+                                "2026-03-02T09:00"
+                        ),
+                        List.of(20.0, tonightLow + 2.0, tonightLow + 1.0, tonightLow, tonightLow + 0.5, tonightLow + 1.5, 19.0),
+                        List.of(4.0, maxWind - 2.0, maxWind, maxWind - 3.0, maxWind - 4.0, maxWind - 5.0, 4.0),
+                        List.of(50.0, meanHumidity, meanHumidity, meanHumidity, meanHumidity, meanHumidity, 50.0),
+                        List.of(0.0, rainPerHour, rainPerHour, rainPerHour, rainPerHour, rainPerHour, 0.0)
                 )
         );
     }

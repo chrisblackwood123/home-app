@@ -5,13 +5,13 @@ import java.util.List;
 public record ForecastResponse(
         double latitude,
         double longitude,
-        Daily daily
+        Hourly hourly
 ) {
-    public record Daily(
+    public record Hourly(
             List<String> time,
-            List<Double> temperature_2m_min,
-            List<Double> wind_speed_10m_max,
-            List<Double> relative_humidity_2m_mean,
-            List<Double> rain_sum
+            List<Double> temperature_2m,
+            List<Double> wind_speed_10m,
+            List<Double> relative_humidity_2m,
+            List<Double> rain
     ) {}
 }

@@ -38,7 +38,7 @@ public class WeatherService {
                             .path("/forecast")
                             .queryParam("latitude", latitude)
                             .queryParam("longitude", longitude)
-                            .queryParam("daily", "temperature_2m_min,wind_speed_10m_max,relative_humidity_2m_mean,rain_sum")
+                            .queryParam("hourly", "temperature_2m,wind_speed_10m,relative_humidity_2m,rain")
                             .queryParam("timezone", timezone)
                             .build())
                     .retrieve()

@@ -7,10 +7,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 @Service
 public class WindowService {
+
+    private static final int BEDTIME_HOUR = 22;
+    private static final int WAKE_HOUR = 8;
 
     private final WeatherService weatherService;
     private final double fiveMinuteVentMaxTemp;
@@ -61,10 +66,11 @@ public class WindowService {
 
     public WindowRecommendation windowRecommendation() {
         ForecastResponse forecastResponse = weatherService.getForecast();
-        Double tonightLow = getTonightLow(forecastResponse);
-        Double maxWind = getTonightMaxWind(forecastResponse);
-        Double meanHumidity = getTonightMeanHumidity(forecastResponse);
-        Double rainSum = getTonightRainSum(forecastResponse);
+        OvernightMetrics overnightMetrics = overnightMetrics(forecastResponse);
+        Double tonightLow = overnightMetrics.lowTemperature();
+        Double maxWind = overnightMetrics.maxWind();
+        Double meanHumidity = overnightMetrics.meanHumidity();
+        Double rainSum = overnightMetrics.rainSum();
         Double effectiveNightLow = tonightLow == null ? null : effectiveNightLow(tonightLow, maxWind, meanHumidity);
         WindowDecision decision = windowDecision(effectiveNightLow, rainSum);
         return new WindowRecommendation(
@@ -102,10 +108,11 @@ public class WindowService {
     }
 
     WindowDecision windowDecision(ForecastResponse forecastResponse) {
-        Double tonightLow = getTonightLow(forecastResponse);
-        Double maxWind = getTonightMaxWind(forecastResponse);
-        Double meanHumidity = getTonightMeanHumidity(forecastResponse);
-        Double rainSum = getTonightRainSum(forecastResponse);
+        OvernightMetrics overnightMetrics = overnightMetrics(forecastResponse);
+        Double tonightLow = overnightMetrics.lowTemperature();
+        Double maxWind = overnightMetrics.maxWind();
+        Double meanHumidity = overnightMetrics.meanHumidity();
+        Double rainSum = overnightMetrics.rainSum();
         Double effectiveNightLow = tonightLow == null ? null : effectiveNightLow(tonightLow, maxWind, meanHumidity);
         return windowDecision(effectiveNightLow, rainSum);
     }
@@ -173,44 +180,91 @@ public class WindowService {
                 || decision == WindowDecision.OPEN_WIDE_OVERNIGHT;
     }
 
-    private Double getTonightLow(ForecastResponse forecastResponse) {
-        if (forecastResponse == null || forecastResponse.daily() == null) {
-            return null;
+    private OvernightMetrics overnightMetrics(ForecastResponse forecastResponse) {
+        if (forecastResponse == null || forecastResponse.hourly() == null || forecastResponse.hourly().time() == null) {
+            return OvernightMetrics.empty();
         }
 
-        return getFirstDailyValue(forecastResponse.daily().temperature_2m_min());
+        ForecastResponse.Hourly hourly = forecastResponse.hourly();
+        LocalDateTime windowStart = findFirstBedtime(hourly.time());
+        if (windowStart == null) {
+            return OvernightMetrics.empty();
+        }
+
+        LocalDateTime windowEnd = windowStart.toLocalDate().plusDays(1).atTime(WAKE_HOUR, 0);
+        Double lowestTemperature = null;
+        Double maxWind = null;
+        double humiditySum = 0.0;
+        int humidityCount = 0;
+        double rainSum = 0.0;
+        int rainCount = 0;
+
+        for (int index = 0; index < hourly.time().size(); index++) {
+            LocalDateTime timestamp = parseTimestamp(hourly.time().get(index));
+            if (timestamp == null || timestamp.isBefore(windowStart) || timestamp.isAfter(windowEnd)) {
+                continue;
+            }
+
+            Double temperature = valueAt(hourly.temperature_2m(), index);
+            if (temperature != null && (lowestTemperature == null || temperature < lowestTemperature)) {
+                lowestTemperature = temperature;
+            }
+
+            Double wind = valueAt(hourly.wind_speed_10m(), index);
+            if (wind != null && (maxWind == null || wind > maxWind)) {
+                maxWind = wind;
+            }
+
+            Double humidity = valueAt(hourly.relative_humidity_2m(), index);
+            if (humidity != null) {
+                humiditySum += humidity;
+                humidityCount++;
+            }
+
+            Double rain = valueAt(hourly.rain(), index);
+            if (rain != null) {
+                rainSum += rain;
+                rainCount++;
+            }
+        }
+
+        return new OvernightMetrics(
+                lowestTemperature,
+                maxWind,
+                humidityCount == 0 ? null : humiditySum / humidityCount,
+                rainCount == 0 ? null : rainSum
+        );
     }
 
-    private Double getTonightMaxWind(ForecastResponse forecastResponse) {
-        if (forecastResponse == null || forecastResponse.daily() == null) {
-            return null;
+    private LocalDateTime findFirstBedtime(List<String> timestamps) {
+        for (String timestampValue : timestamps) {
+            LocalDateTime timestamp = parseTimestamp(timestampValue);
+            if (timestamp != null && timestamp.getHour() == BEDTIME_HOUR) {
+                return timestamp;
+            }
         }
 
-        return getFirstDailyValue(forecastResponse.daily().wind_speed_10m_max());
+        return null;
     }
 
-    private Double getTonightMeanHumidity(ForecastResponse forecastResponse) {
-        if (forecastResponse == null || forecastResponse.daily() == null) {
+    private LocalDateTime parseTimestamp(String value) {
+        if (value == null || value.isBlank()) {
             return null;
         }
 
-        return getFirstDailyValue(forecastResponse.daily().relative_humidity_2m_mean());
+        try {
+            return LocalDateTime.parse(value);
+        } catch (DateTimeParseException exception) {
+            return null;
+        }
     }
 
-    private Double getTonightRainSum(ForecastResponse forecastResponse) {
-        if (forecastResponse == null || forecastResponse.daily() == null) {
+    private Double valueAt(List<Double> values, int index) {
+        if (values == null || index >= values.size()) {
             return null;
         }
 
-        return getFirstDailyValue(forecastResponse.daily().rain_sum());
-    }
-
-    private Double getFirstDailyValue(List<Double> values) {
-        if (values == null || values.isEmpty()) {
-            return null;
-        }
-
-        return values.getFirst();
+        return values.get(index);
     }
 
     private void validateThresholds() {
@@ -219,6 +273,17 @@ public class WindowService {
                 && tenToFifteenMinuteVentAndCrackMaxTemp <= crackOvernightMaxTemp
                 && crackOvernightMaxTemp <= openOvernightMaxTemp)) {
             throw new IllegalStateException("Window temperature thresholds must be ordered ascending");
+        }
+    }
+
+    private record OvernightMetrics(
+            Double lowTemperature,
+            Double maxWind,
+            Double meanHumidity,
+            Double rainSum
+    ) {
+        private static OvernightMetrics empty() {
+            return new OvernightMetrics(null, null, null, null);
         }
     }
 }

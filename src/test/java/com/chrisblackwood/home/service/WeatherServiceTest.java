@@ -39,15 +39,15 @@ public class WeatherServiceTest {
 
     @Test
     void shouldGetForecast() throws Exception {
-        ForecastResponse forecastResponse = new ForecastResponse(LATITUDE, LONGITUDE, new ForecastResponse.Daily
-                (List.of("2026-03-01"), List.of(TEMPERATURE), List.of(WIND_SPEED), List.of(HUMIDITY), List.of(RAIN_SUM)));
+        ForecastResponse forecastResponse = new ForecastResponse(LATITUDE, LONGITUDE, new ForecastResponse.Hourly
+                (List.of("2026-03-01T22:00"), List.of(TEMPERATURE), List.of(WIND_SPEED), List.of(HUMIDITY), List.of(RAIN_SUM)));
 
 
         server.expect(requestTo(containsString("/forecast")))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(queryParam("latitude", String.valueOf(LATITUDE)))
                 .andExpect(queryParam("longitude", String.valueOf(LONGITUDE)))
-                .andExpect(queryParam("daily", "temperature_2m_min,wind_speed_10m_max,relative_humidity_2m_mean,rain_sum"))
+                .andExpect(queryParam("hourly", "temperature_2m,wind_speed_10m,relative_humidity_2m,rain"))
                 .andExpect(queryParam("timezone", TIMEZONE))
                 .andRespond(withSuccess(MAPPER.writeValueAsString(forecastResponse), MediaType.APPLICATION_JSON));
 
@@ -55,55 +55,55 @@ public class WeatherServiceTest {
 
         assertEquals(LATITUDE, response.latitude());
         assertEquals(LONGITUDE, response.longitude());
-        assertEquals(TEMPERATURE, response.daily().temperature_2m_min().getFirst());
-        assertEquals(WIND_SPEED, response.daily().wind_speed_10m_max().getFirst());
-        assertEquals(HUMIDITY, response.daily().relative_humidity_2m_mean().getFirst());
-        assertEquals(RAIN_SUM, response.daily().rain_sum().getFirst());
+        assertEquals(TEMPERATURE, response.hourly().temperature_2m().getFirst());
+        assertEquals(WIND_SPEED, response.hourly().wind_speed_10m().getFirst());
+        assertEquals(HUMIDITY, response.hourly().relative_humidity_2m().getFirst());
+        assertEquals(RAIN_SUM, response.hourly().rain().getFirst());
 
         server.verify();
     }
 
     @Test
     void shouldGetFirstNightForecast() throws Exception {
-        ForecastResponse forecastResponse = new ForecastResponse(LATITUDE, LONGITUDE, new ForecastResponse.Daily
-                (List.of("2026-03-01", "2026-03-02"), List.of(TEMPERATURE, 2.6), List.of(WIND_SPEED, 12.0), List.of(HUMIDITY, 55.0), List.of(RAIN_SUM, 1.2)));
+        ForecastResponse forecastResponse = new ForecastResponse(LATITUDE, LONGITUDE, new ForecastResponse.Hourly
+                (List.of("2026-03-01T22:00", "2026-03-01T23:00"), List.of(TEMPERATURE, 2.6), List.of(WIND_SPEED, 12.0), List.of(HUMIDITY, 55.0), List.of(RAIN_SUM, 1.2)));
 
 
         server.expect(requestTo(containsString("/forecast")))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(queryParam("latitude", String.valueOf(LATITUDE)))
                 .andExpect(queryParam("longitude", String.valueOf(LONGITUDE)))
-                .andExpect(queryParam("daily", "temperature_2m_min,wind_speed_10m_max,relative_humidity_2m_mean,rain_sum"))
+                .andExpect(queryParam("hourly", "temperature_2m,wind_speed_10m,relative_humidity_2m,rain"))
                 .andExpect(queryParam("timezone", TIMEZONE))
                 .andRespond(withSuccess(MAPPER.writeValueAsString(forecastResponse), MediaType.APPLICATION_JSON));
 
         ForecastResponse response = weatherService.getForecast();
 
-        assertEquals(TEMPERATURE, response.daily().temperature_2m_min().getFirst());
-        assertEquals(WIND_SPEED, response.daily().wind_speed_10m_max().getFirst());
-        assertEquals(HUMIDITY, response.daily().relative_humidity_2m_mean().getFirst());
-        assertEquals(RAIN_SUM, response.daily().rain_sum().getFirst());
+        assertEquals(TEMPERATURE, response.hourly().temperature_2m().getFirst());
+        assertEquals(WIND_SPEED, response.hourly().wind_speed_10m().getFirst());
+        assertEquals(HUMIDITY, response.hourly().relative_humidity_2m().getFirst());
+        assertEquals(RAIN_SUM, response.hourly().rain().getFirst());
 
         server.verify();
     }
 
     @Test
     void shouldHandleEmptyTemperatureList() throws Exception {
-        ForecastResponse forecastResponse = new ForecastResponse(LATITUDE, LONGITUDE, new ForecastResponse.Daily
-                (List.of("2026-03-01", "2026-03-02"), List.of(), List.of(WIND_SPEED, 12.0), List.of(HUMIDITY, 55.0), List.of(RAIN_SUM, 1.2)));
+        ForecastResponse forecastResponse = new ForecastResponse(LATITUDE, LONGITUDE, new ForecastResponse.Hourly
+                (List.of("2026-03-01T22:00", "2026-03-01T23:00"), List.of(), List.of(WIND_SPEED, 12.0), List.of(HUMIDITY, 55.0), List.of(RAIN_SUM, 1.2)));
 
 
         server.expect(requestTo(containsString("/forecast")))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(queryParam("latitude", String.valueOf(LATITUDE)))
                 .andExpect(queryParam("longitude", String.valueOf(LONGITUDE)))
-                .andExpect(queryParam("daily", "temperature_2m_min,wind_speed_10m_max,relative_humidity_2m_mean,rain_sum"))
+                .andExpect(queryParam("hourly", "temperature_2m,wind_speed_10m,relative_humidity_2m,rain"))
                 .andExpect(queryParam("timezone", TIMEZONE))
                 .andRespond(withSuccess(MAPPER.writeValueAsString(forecastResponse), MediaType.APPLICATION_JSON));
 
         ForecastResponse response = weatherService.getForecast();
 
-        assertEquals(0, response.daily().temperature_2m_min().size());
+        assertEquals(0, response.hourly().temperature_2m().size());
 
         server.verify();
     }
